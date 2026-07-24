@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+output/*
+!output/.gitkeep
+wordlists/*
+!wordlists/.gitkeep
+*.json
+!package.json
+.camoro_*
+.DS_Store
+*.log
