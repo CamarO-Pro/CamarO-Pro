@@ -1,0 +1,1 @@
+# Camoro modules package
