@@ -1,9 +1,0 @@
-results/
-sessions/
-__pycache__/
-*.pyc
-*.pyo
-.proxies
-*.log
-.env
-.DS_Store
