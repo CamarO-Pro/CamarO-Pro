@@ -1,363 +1,362 @@
 #!/usr/bin/env python3
-"""
-Camoro Module 2 - AI Wordlist Generator
-يسأل عن معلومات شخصية ويولّد قاموس كلمات مرور ضخم
-"""
+"""Camoro Module 2 - AI Wordlist Generator (~18000 passwords)."""
 
-import os
+from __future__ import annotations
+
 import itertools
+import os
 import re
-from datetime import datetime
+from typing import Dict, List, Set
 
 class C:
-    R = '\033[91m'; G = '\033[92m'; Y = '\033[93m'
-    B = '\033[94m'; P = '\033[95m'; C = '\033[96m'
-    W = '\033[97m'; BL = '\033[1m'; D = '\033[2m'; RE = '\033[0m'
-
-# رموز واستبدالات شائعة
-LEET = {
-    'a': ['a', 'A', '4', '@'],
-    'e': ['e', 'E', '3'],
-    'i': ['i', 'I', '1', '!'],
-    'o': ['o', 'O', '0'],
-    's': ['s', 'S', '5', '$'],
-    't': ['t', 'T', '7'],
-    'b': ['b', 'B', '8'],
-    'g': ['g', 'G', '9'],
-}
-
-COMMON_SUFFIXES = [
-    '', '1', '12', '123', '1234', '12345', '123456',
-    '!', '!!', '@', '#', '*', '!!',
-    '01', '02', '07', '10', '11', '22', '69',
-    '00', '99', '007', '2000', '2001', '2002', '2003', '2004',
-    '2005', '2006', '2007', '2008', '2009', '2010',
-    '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022',
-    '2023', '2024', '2025', '2026',
-    'qwerty', 'pass', 'password', 'admin', 'instagram', 'insta',
-    'ig', 'love', 'Life', 'loveu', 'xxx',
-]
-
-COMMON_PREFIXES = ['', '!', '@', '#', 'x', 'xx', 'the']
-
-YEARS = [str(y) for y in range(1980, 2027)]
-MONTHS = [f'{m:02d}' for m in range(1, 13)]
-DAYS = [f'{d:02d}' for d in range(1, 32)]
-
-SPECIALS = ['!', '@', '#', '$', '%', '&', '*', '_', '.', '']
+    R = "\033[91m"
+    G = "\033[92m"
+    Y = "\033[93m"
+    C = "\033[96m"
+    W = "\033[97m"
+    D = "\033[2m"
+    P = "\033[95m"
+    BL = "\033[1m"
+    RE = "\033[0m"
 
 
-def ask(prompt, default=''):
-    val = input(f"  {C.G}[?]{C.RE} {prompt} {C.D}[{default}]{C.RE} {C.W}> {C.RE}").strip()
-    return val if val else default
+def clear() -> None:
+    try:
+        os.system("clear 2>/dev/null || true")
+    except Exception:
+        print("\n" * 3)
 
 
-def yes_no(prompt, default=True):
-    d = 'Y/n' if default else 'y/N'
-    val = input(f"  {C.G}[?]{C.RE} {prompt} ({d}) {C.W}> {C.RE}").strip().lower()
-    if not val:
+def pause() -> None:
+    try:
+        input(f"\n  {C.D}Enter...{C.RE}")
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+
+def ask(msg: str, default: str = "") -> str:
+    try:
+        v = input(f"  {C.G}[?]{C.RE} {msg} {C.D}[{default}]{C.RE} > ").strip()
+    except (EOFError, KeyboardInterrupt):
         return default
-    return val in ('y', 'yes', 'نعم', 'o', 'oui')
+    return v if v else default
 
 
-def clean(s):
-    return re.sub(r'[^a-zA-Z0-9á-úà-ùä-ü]', '', s) if s else ''
+def clean(s: str) -> str:
+    if not s:
+        return ""
+    return re.sub(r"[^0-9A-Za-z\u0600-\u06FF]", "", s)
 
 
-def variants_case(word):
-    if not word or len(word) > 20:
-        return {word} if word else set()
-    return {
-        word.lower(),
-        word.upper(),
-        word.capitalize(),
-        word.title(),
-        word.swapcase(),
-    }
-
-
-def leet_variants(word, max_variants=40):
-    """توليد استبدالات leetspeak محدودة"""
-    word = word.lower()
-    results = {word}
-    if len(word) > 12:
-        return results
-
-    # استبدال حرف واحد فقط في كل مرة + بعض الثنائيات
-    for i, ch in enumerate(word):
-        if ch in LEET:
-            for rep in LEET[ch]:
-                if rep != ch:
-                    results.add(word[:i] + rep + word[i+1:])
-                    if len(results) >= max_variants:
-                        return results
-    return results
-
-
-def combine_bases(bases):
-    """دمج الكلمات الاساسية: name+year, name+name2, ..."""
-    out = set()
-    bases = [b for b in bases if b and len(b) >= 2]
-
-    for b in bases:
-        out.add(b)
-
-    # ثنائيات
-    for a, b in itertools.permutations(bases, 2):
-        if len(a) + len(b) <= 20:
-            out.add(a + b)
-            out.add(a + '_' + b)
-            out.add(a + '.' + b)
-
-    return out
-
-
-def generate_wordlist(info, target_count=18000):
-    """محرك توليد الكلمات الذكي"""
-    passwords = set()
-
-    # جمع القواعد
-    base_words = []
-    for key in [
-        'username', 'first_name', 'last_name', 'nickname',
-        'partner', 'father', 'mother', 'child', 'friend',
-        'pet', 'city', 'country', 'school', 'team',
-        'job', 'keyword1', 'keyword2', 'keyword3', 'keyword4',
-        'keyword5', 'company', 'hobby'
-    ]:
-        v = clean(info.get(key, ''))
-        if v:
-            base_words.append(v)
-            base_words.extend(list(variants_case(v)))
-
-    # تاريخ الميلاد ومكونات
-    day = info.get('birth_day', '')
-    month = info.get('birth_month', '')
-    year = info.get('birth_year', '')
-    phone = re.sub(r'\D', '', info.get('phone', ''))
-    plate = clean(info.get('plate', ''))
-
-    number_bits = []
-    if day: number_bits.append(day.zfill(2))
-    if month: number_bits.append(month.zfill(2))
-    if year:
-        number_bits.append(year)
-        number_bits.append(year[-2:])
-    if day and month:
-        number_bits.append(day.zfill(2) + month.zfill(2))
-        number_bits.append(month.zfill(2) + day.zfill(2))
-    if day and month and year:
-        number_bits.extend([
-            day.zfill(2) + month.zfill(2) + year,
-            day.zfill(2) + month.zfill(2) + year[-2:],
-            year + month.zfill(2) + day.zfill(2),
-        ])
-    if phone:
-        number_bits.append(phone)
-        if len(phone) >= 4:
-            number_bits.append(phone[-4:])
-            number_bits.append(phone[-6:])
-        if len(phone) >= 8:
-            number_bits.append(phone[:8])
-    if plate:
-        number_bits.append(plate)
-
-    number_bits.extend(['123', '1234', '12345', '123456', '111', '000', '007', '69', '99', '100'])
-    number_bits.extend(YEARS[-30:])  # آخر 30 سنة
-
-    # 1) كلمات + suffixes
-    print(f"  {C.C}[*] Stage 1: base + suffixes...{C.RE}")
-    unique_bases = list(set(b.lower() for b in base_words if 2 <= len(b) <= 16))
-
-    for base in unique_bases:
-        for case_v in variants_case(base):
-            for suf in COMMON_SUFFIXES:
-                passwords.add(case_v + suf)
-            for pre in COMMON_PREFIXES:
-                passwords.add(pre + case_v)
-            for n in number_bits:
-                passwords.add(case_v + n)
-                passwords.add(case_v + '_' + n)
-                passwords.add(n + case_v)
-
-    # 2) leet speak
-    print(f"  {C.C}[*] Stage 2: leetspeak...{C.RE}")
-    for base in unique_bases[:15]:
-        for lv in leet_variants(base):
-            passwords.add(lv)
-            for n in number_bits[:20]:
-                passwords.add(lv + n)
-            for s in SPECIALS:
-                passwords.add(lv + s)
-                passwords.add(lv + n if n else lv) if False else None
-            for suf in ['123', '1234', '!', '@', '2020', '2024', '2025', '2026']:
-                passwords.add(lv + suf)
-
-    # 3) دمج اسمين
-    print(f"  {C.C}[*] Stage 3: name combinations...{C.RE}")
-    primary = [clean(info.get(k, '')).lower() for k in
-               ['first_name', 'last_name', 'nickname', 'partner', 'pet', 'username'] if info.get(k)]
-    primary = [p for p in primary if len(p) >= 2][:6]
-
-    for a, b in itertools.permutations(primary, 2):
-        for sep in ['', '_', '.', '']:
-            combo = a + sep + b
-            if len(combo) <= 20:
-                passwords.add(combo)
-                for n in number_bits[:25]:
-                    passwords.add(combo + n)
-                for s in ['!', '123', '1234', '2024', '2025', '2026']:
-                    passwords.add(combo + s)
-
-    # 4) أنماط إنستقرام شائعة
-    print(f"  {C.C}[*] Stage 4: Instagram patterns...{C.RE}")
-    ig_patterns = ['ig', 'insta', 'instagram', 'ig_', '_ig', 'official', 'real', 'its']
-    for base in unique_bases[:10]:
-        for p in ig_patterns:
-            passwords.add(p + base)
-            passwords.add(base + p)
-            passwords.add(base + '_' + p)
-
-    # 5) لوحة المفاتيح وأنماط
-    print(f"  {C.C}[*] Stage 5: keyboard & common patterns...{C.RE}")
-    keyboard = [
-        'qwerty', 'qwertyuiop', 'asdfgh', 'zxcvbn', 'qazwsx',
-        'password', 'password1', 'Password1', 'Password123',
-        'iloveyou', 'welcome', 'monkey', 'dragon', 'master',
-        'letmein', 'football', 'baseball', 'sunshine', 'princess',
-        'admin123', 'root', 'toor', 'passw0rd', 'p@ssw0rd',
-        'abc123', 'abcd1234', 'aaa111', 'xyz123',
-    ]
-    for k in keyboard:
-        passwords.add(k)
-        for n in number_bits[:10]:
-            passwords.add(k + n)
-
-    # 6) توسعة للوصول لـ ~18000
-    print(f"  {C.C}[*] Stage 6: expansion to ~{target_count}...{C.RE}")
-    base_snapshot = list(passwords)[:3000]
-    extra_nums = [str(i) for i in range(0, 100)] + [f'{i:02d}' for i in range(0, 100)]
-    extra_suf = ['!', '!!', '!!!', '@', '@@', '#', '##', '*', '**', '.', '_',
-                 'x', 'xx', 'xxx', '1!', '12!', '123!', 'a', 'z',
-                 '00', '01', '10', '11', '22', '88', '99']
-
-    for pw in base_snapshot:
-        if len(passwords) >= target_count:
-            break
-        if 4 <= len(pw) <= 14:
-            for s in extra_suf:
-                passwords.add(pw + s)
-                if len(passwords) >= target_count:
-                    break
-            for n in extra_nums:
-                passwords.add(pw + n)
-                if len(passwords) >= target_count:
-                    break
-
-    # تصفية: فقط كلمات 4-30 حرف
-    final = sorted(
-        {p for p in passwords if 4 <= len(p) <= 30 and p.strip()},
-        key=lambda x: (len(x), x)
+def variants_case(word: str) -> List[str]:
+    if not word:
+        return []
+    return list(
+        dict.fromkeys(
+            [
+                word,
+                word.lower(),
+                word.upper(),
+                word.capitalize(),
+                word.title(),
+            ]
+        )
     )
 
-    return final[:max(target_count, len(final))]
+
+def leet_simple(word: str) -> List[str]:
+    table = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "5", "t": "7"})
+    low = word.lower()
+    out = {low, low.translate(table)}
+    # single replacements
+    reps = {"a": "@", "i": "!", "s": "$"}
+    for i, ch in enumerate(low):
+        if ch in reps:
+            out.add(low[:i] + reps[ch] + low[i + 1 :])
+    return list(out)
 
 
-def collect_info():
-    """أسئلة جمع المعلومات"""
-    print(f"""
+def generate_wordlist(info: Dict[str, str], target_count: int = 18000) -> List[str]:
+    passwords: Set[str] = set()
+
+    base_keys = [
+        "username",
+        "first_name",
+        "last_name",
+        "nickname",
+        "partner",
+        "father",
+        "mother",
+        "child",
+        "friend",
+        "pet",
+        "city",
+        "country",
+        "school",
+        "team",
+        "job",
+        "company",
+        "hobby",
+        "keyword1",
+        "keyword2",
+        "keyword3",
+        "keyword4",
+        "keyword5",
+    ]
+
+    bases: List[str] = []
+    for k in base_keys:
+        w = clean(info.get(k, ""))
+        if len(w) >= 2:
+            bases.extend(variants_case(w))
+
+    # OSINT hints
+    uname = clean(info.get("username", "")) or "target"
+    hints_path = f"output/{uname}_hints.txt"
+    if os.path.isfile(hints_path):
+        try:
+            with open(hints_path, encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    w = clean(line.strip())
+                    if len(w) >= 2:
+                        bases.append(w.lower())
+        except Exception:
+            pass
+
+    bases = list(dict.fromkeys([b for b in bases if 2 <= len(b) <= 20]))
+
+    day = (info.get("birth_day") or "").strip()
+    month = (info.get("birth_month") or "").strip()
+    year = (info.get("birth_year") or "").strip()
+    phone = re.sub(r"\D", "", info.get("phone") or "")
+    plate = clean(info.get("plate") or "")
+
+    nums: List[str] = [
+        "",
+        "1",
+        "12",
+        "123",
+        "1234",
+        "12345",
+        "123456",
+        "!",
+        "!!",
+        "@",
+        "#",
+        "*",
+        "00",
+        "01",
+        "07",
+        "10",
+        "11",
+        "22",
+        "69",
+        "99",
+        "007",
+    ]
+    nums.extend([str(y) for y in range(1990, 2027)])
+    if day:
+        nums.append(day.zfill(2))
+    if month:
+        nums.append(month.zfill(2))
+    if year:
+        nums.append(year)
+        if len(year) >= 2:
+            nums.append(year[-2:])
+    if day and month:
+        nums.append(day.zfill(2) + month.zfill(2))
+        nums.append(month.zfill(2) + day.zfill(2))
+    if day and month and year:
+        nums.extend(
+            [
+                day.zfill(2) + month.zfill(2) + year,
+                day.zfill(2) + month.zfill(2) + year[-2:],
+                year + month.zfill(2) + day.zfill(2),
+            ]
+        )
+    if phone:
+        nums.append(phone)
+        if len(phone) >= 4:
+            nums.append(phone[-4:])
+        if len(phone) >= 6:
+            nums.append(phone[-6:])
+    if plate:
+        nums.append(plate)
+
+    nums = list(dict.fromkeys(nums))
+
+    print(f"  {C.C}[*] Stage 1: bases + numbers...{C.RE}")
+    for b in bases:
+        for n in nums:
+            passwords.add(b + n)
+            if n:
+                passwords.add(b + "_" + n)
+                passwords.add(b + "." + n)
+                passwords.add(n + b)
+        for pre in ("", "!", "@", "x", "the"):
+            passwords.add(pre + b)
+        for suf in ("ig", "insta", "instagram", "_ig", "official", "real"):
+            passwords.add(b + suf)
+            passwords.add(suf + b)
+
+    print(f"  {C.C}[*] Stage 2: leet...{C.RE}")
+    for b in bases[:20]:
+        for lv in leet_simple(b):
+            passwords.add(lv)
+            for n in nums[:40]:
+                passwords.add(lv + n)
+
+    print(f"  {C.C}[*] Stage 3: name pairs...{C.RE}")
+    primary = []
+    for k in ("first_name", "last_name", "nickname", "partner", "pet", "username"):
+        w = clean(info.get(k, "")).lower()
+        if len(w) >= 2:
+            primary.append(w)
+    primary = list(dict.fromkeys(primary))[:8]
+    for a, b in itertools.permutations(primary, 2):
+        if len(a) + len(b) <= 18:
+            for sep in ("", "_", "."):
+                combo = a + sep + b
+                passwords.add(combo)
+                for n in nums[:30]:
+                    passwords.add(combo + n)
+
+    print(f"  {C.C}[*] Stage 4: commons...{C.RE}")
+    commons = [
+        "password",
+        "Password1",
+        "password123",
+        "qwerty",
+        "qwerty123",
+        "iloveyou",
+        "admin123",
+        "welcome",
+        "monkey",
+        "dragon",
+        "abc123",
+        "insta",
+        "instagram",
+        "passw0rd",
+        "p@ssw0rd",
+    ]
+    passwords.update(commons)
+    if uname:
+        passwords.update([uname + "123", uname + "2024", uname + "2025", uname + "2026"])
+
+    print(f"  {C.C}[*] Stage 5: expand to ~{target_count}...{C.RE}")
+    snap = list(passwords)[:3000]
+    extra_s = ["!", "!!", "1", "12", "123", "1234", "2024", "2025", "2026", "x", "xx", "xxx", "00", "99"]
+    for p in snap:
+        if len(passwords) >= target_count + 500:
+            break
+        if 4 <= len(p) <= 16:
+            for s in extra_s:
+                passwords.add(p + s)
+
+    final = sorted({p for p in passwords if 4 <= len(p) <= 30}, key=lambda x: (len(x), x))
+    return final[: max(target_count, min(len(final), target_count))]
+
+
+def collect_info() -> Dict[str, str]:
+    print(
+        f"""
   {C.P}╔══════════════════════════════════════════════════╗
-  ║       🧠 AI WORDLIST GENERATOR                   ║
+  ║       AI WORDLIST GENERATOR                      ║
   ║   أجب على الأسئلة لتوليد قاموس ذكي                ║
   ╚══════════════════════════════════════════════════╝{C.RE}
-""")
-    info = {}
+"""
+    )
+    info: Dict[str, str] = {}
+    print(f"  {C.Y}-- Account --{C.RE}")
+    info["username"] = ask("Username / target", "target")
+    info["nickname"] = ask("Nickname")
 
-    print(f"  {C.Y}── معلومات الحساب ──{C.RE}")
-    info['username'] = ask('اسم المستخدم (Username)')
-    info['nickname'] = ask('لقب / Nickname')
+    print(f"\n  {C.Y}-- Personal --{C.RE}")
+    info["first_name"] = ask("First name")
+    info["last_name"] = ask("Last name")
+    info["birth_day"] = ask("Birth day DD")
+    info["birth_month"] = ask("Birth month MM")
+    info["birth_year"] = ask("Birth year YYYY")
+    info["phone"] = ask("Phone")
+    info["city"] = ask("City")
+    info["country"] = ask("Country")
 
-    print(f"\n  {C.Y}── المعلومات الشخصية ──{C.RE}")
-    info['first_name'] = ask('الاسم الحقيقي (First name)')
-    info['last_name'] = ask('اسم العائلة (Last name)')
-    info['birth_day'] = ask('يوم الميلاد (01-31)', '')
-    info['birth_month'] = ask('شهر الميلاد (01-12)', '')
-    info['birth_year'] = ask('سنة الميلاد (YYYY)', '')
-    info['phone'] = ask('رقم الهاتف (اختياري)', '')
-    info['city'] = ask('المدينة', '')
-    info['country'] = ask('البلد', '')
+    print(f"\n  {C.Y}-- Relations --{C.RE}")
+    info["partner"] = ask("Partner name")
+    info["father"] = ask("Father name")
+    info["mother"] = ask("Mother name")
+    info["child"] = ask("Child name")
+    info["friend"] = ask("Friend name")
+    info["pet"] = ask("Pet name")
 
-    print(f"\n  {C.Y}── العائلة والعلاقات ──{C.RE}")
-    info['partner'] = ask('اسم الشريك / الحبيب(ة)', '')
-    info['father'] = ask('اسم الأب', '')
-    info['mother'] = ask('اسم الأم', '')
-    info['child'] = ask('اسم الابن/الابنة', '')
-    info['friend'] = ask('اسم صديق مقرب', '')
-    info['pet'] = ask('اسم الحيوانات الأليفة', '')
-
-    print(f"\n  {C.Y}── اهتمامات ──{C.RE}")
-    info['school'] = ask('المدرسة / الجامعة', '')
-    info['team'] = ask('فريق كرة / نادي', '')
-    info['job'] = ask('المهنة', '')
-    info['company'] = ask('اسم الشركة', '')
-    info['hobby'] = ask('هواية', '')
-    info['plate'] = ask('رقم لوحة سيارة', '')
-
-    print(f"\n  {C.Y}── كلمات مفتاحية إضافية ──{C.RE}")
-    info['keyword1'] = ask('كلمة مفتاحية 1', '')
-    info['keyword2'] = ask('كلمة مفتاحية 2', '')
-    info['keyword3'] = ask('كلمة مفتاحية 3', '')
-    info['keyword4'] = ask('كلمة مفتاحية 4', '')
-    info['keyword5'] = ask('كلمة مفتاحية 5', '')
-
-    # دمج hints من OSINT إن وجدت
-    if info['username']:
-        hints = f"output/{info['username']}_hints.txt"
-        if os.path.exists(hints):
-            if yes_no(f'استخدام hints من OSINT ({hints})؟', True):
-                with open(hints, encoding='utf-8') as f:
-                    extras = [l.strip() for l in f if l.strip()]
-                for i, w in enumerate(extras[:5]):
-                    key = f'keyword{i+1}'
-                    if not info.get(key):
-                        info[key] = w
-                print(f"  {C.G}[✓] Merged {len(extras)} OSINT hints{C.RE}")
-
+    print(f"\n  {C.Y}-- Extra --{C.RE}")
+    info["school"] = ask("School / University")
+    info["team"] = ask("Team / Club")
+    info["job"] = ask("Job")
+    info["company"] = ask("Company")
+    info["hobby"] = ask("Hobby")
+    info["plate"] = ask("Car plate")
+    info["keyword1"] = ask("Keyword 1")
+    info["keyword2"] = ask("Keyword 2")
+    info["keyword3"] = ask("Keyword 3")
+    info["keyword4"] = ask("Keyword 4")
+    info["keyword5"] = ask("Keyword 5")
     return info
 
 
-def run():
-    os.system('clear' if os.name == 'posix' else 'cls')
+def run() -> None:
+    clear()
     info = collect_info()
 
-    target = ask('عدد كلمات المرور المطلوبة', '18000')
+    raw = ask("Password count", "18000")
     try:
-        target = int(target)
-    except ValueError:
+        target = int(raw)
+        if target < 100:
+            target = 100
+        if target > 200000:
+            target = 200000
+    except Exception:
         target = 18000
 
     print(f"\n  {C.C}[*] Generating smart wordlist...{C.RE}")
-    passwords = generate_wordlist(info, target_count=target)
+    try:
+        passwords = generate_wordlist(info, target_count=target)
+    except Exception as e:
+        print(f"  {C.R}[✗] Generate failed: {e}{C.RE}")
+        pause()
+        return
+
+    uname = clean(info.get("username") or "target") or "target"
+    try:
+        os.makedirs("wordlists", exist_ok=True)
+        os.makedirs("output", exist_ok=True)
+    except Exception as e:
+        print(f"  {C.R}[!] mkdir failed: {e}{C.RE}")
+        pause()
+        return
+
+    path = f"wordlists/{uname}_wordlist.txt"
+    path2 = f"output/{uname}_wordlist.txt"
+    text = "\n".join(passwords)
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        with open(path2, "w", encoding="utf-8") as f:
+            f.write(text)
+    except Exception as e:
+        print(f"  {C.R}[✗] Save failed: {e}{C.RE}")
+        pause()
+        return
+
     print(f"  {C.G}[✓] Generated: {len(passwords):,} passwords{C.RE}")
-
-    os.makedirs('wordlists', exist_ok=True)
-    os.makedirs('output', exist_ok=True)
-
-    uname = info.get('username') or 'target'
-    out_path = f"wordlists/{uname}_wordlist.txt"
-    with open(out_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(passwords))
-
-    # أيضاً نسخة في output
-    out2 = f"output/{uname}_wordlist.txt"
-    with open(out2, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(passwords))
-
-    print(f"\n  {C.G}[✓] Saved: {out_path}{C.RE}")
-    print(f"  {C.G}[✓] Saved: {out2}{C.RE}")
-    print(f"  {C.Y}[*] Sample (first 15):{C.RE}")
+    print(f"  {C.G}[✓] Saved: {path}{C.RE}")
+    print(f"  {C.G}[✓] Saved: {path2}{C.RE}")
+    print(f"  {C.Y}Sample:{C.RE}")
     for p in passwords[:15]:
-        print(f"      {C.W}{p}{C.RE}")
+        print(f"    {C.W}{p}{C.RE}")
+    pause()
 
-    input(f"\n  {C.D}Enter للرجوع...{C.RE}")
-    return out_path
+
+if __name__ == "__main__":
+    run()
